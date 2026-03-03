@@ -6,31 +6,53 @@ import os
 # --- PAGE CONFIG ---
 st.set_page_config(page_title="SPM AI Accelerator", page_icon="🚀", layout="wide")
 
-# --- API KEY & MODEL SETUP ---
+# --- 🔐 API & SECRETS MANAGEMENT ---
+st.sidebar.title("🔐 API Status Hub")
+
+# 1. Attempt to read from Streamlit Secrets
 secret_key = st.secrets.get("GEMINI_API_KEY")
-st.sidebar.title("🔐 API Configuration")
 
 if secret_key:
     api_key = secret_key
-    st.sidebar.success("✅ API Key loaded from Secrets")
+    st.sidebar.success("✅ Secret Found: Using Streamlit Cloud Secrets")
 else:
-    # Manual input if secrets fail
-    api_key = st.sidebar.text_input("Enter Gemini API Key:", type="password")
-    if not api_key:
-        st.sidebar.warning("⚠️ Key required to enable AI")
+    # 2. Fallback to manual input if secret is missing
+    st.sidebar.warning("⚠️ No Secret Found")
+    api_key = st.sidebar.text_input("Enter API Key Manually:", type="password")
 
+# --- AI INITIALIZATION ---
 ai_ready = False
+model = None
+
 if api_key:
     try:
         genai.configure(api_key=api_key)
-        # Using Gemini 3 Flash (Standard as of March 2026)
-        model = genai.GenerativeModel('gemini-3-flash')
+        
+        # DYNAMIC MODEL DISCOVERY (Fixes the 404 Error)
+        # We list models to find the best available Flash/Pro model for your key
+        available_models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
+        
+        # Priority list for 2026 models
+        priority_models = [
+            'models/gemini-3.1-flash-preview', 
+            'models/gemini-3-flash-preview', 
+            'models/gemini-2.5-flash'
+        ]
+        
+        # Pick the best match from priority list, or fall back to any 'flash' model
+        selected_name = next((p for p in priority_models if p in available_models), None)
+        if not selected_name:
+            selected_name = next((m for m in available_models if 'flash' in m), available_models[0])
+            
+        model = genai.GenerativeModel(selected_name)
+        st.sidebar.info(f"🤖 Brain: {selected_name.replace('models/', '')}")
         ai_ready = True
+        
     except Exception as e:
-        st.sidebar.error(f"Connection Error: {e}")
+        st.sidebar.error(f"Setup Error: {e}")
 
-# --- NAVIGATION ---
-menu = ["Value Dashboard", "🤖 AI Consultant", "📋 CSDM 4.0 Auditor", "🎓 Onboarding Hub", "📂 Data Explorer"]
+# --- APP NAVIGATION ---
+menu = ["Value Dashboard", "🤖 AI Consultant", "📋 CSDM 4.0 Auditor", "📂 Data Explorer"]
 choice = st.sidebar.radio("Navigate Modules", menu)
 
 # --- MODULE 1: VALUE DASHBOARD ---
@@ -40,69 +62,48 @@ if choice == "Value Dashboard":
     m1.metric("Delivery Speed", "4.5x Faster", "82% Improvement")
     m2.metric("OOTB Alignment", "95%", "High Quality")
     m3.metric("Projected Savings", "$22,500", "Per Lifecycle")
+    
     st.divider()
-    st.subheader("Quantitative Benefits Table")
-    roi_data = {
+    st.subheader("Quantitative Gains")
+    roi_df = pd.DataFrame({
         "Task": ["Process Design", "User Story Writing", "Data Migration"],
         "Manual (Days)": [15, 7, 5],
         "AI-Assisted (Days)": [3, 0.5, 1]
-    }
-    st.table(pd.DataFrame(roi_data))
+    })
+    st.table(roi_df)
+    st.latex(r"ROI = \frac{(\text{Days Saved} \times \text{Daily Rate})}{\text{AI Subscription Cost}}")
 
-# --- MODULE 2: CSDM 4.0 AUDITOR ---
-elif choice == "📋 CSDM 4.0 Auditor":
-    st.title("📋 CSDM 4.0 Best Practice Auditor")
-    st.write("Check your architecture against ServiceNow's latest CSDM domains.")
-    
-    mapping_input = st.text_area("Describe your table mapping (e.g., 'Mapping legacy apps to Business Services'):")
-    
-    if st.button("Run Audit"):
-        if ai_ready:
-            with st.spinner("Auditing against CSDM 4.0..."):
-                # Fixed triple-quote structure
-                prompt = f"""
-                Act as a ServiceNow Master Architect. 
-                Audit this implementation plan: {mapping_input}.
-                Verify alignment with CSDM 4.0 domains.
-                Provide a score (1-10) and specific Red Flags for the build phase.
-                """
-                response = model.generate_content(prompt)
-                st.info("### Audit Results")
-                st.markdown(response.text)
-        else:
-            st.error("AI Key Required for Audit.")
-
-# --- MODULE 3: AI CONSULTANT ---
+# --- MODULE 2: AI CONSULTANT ---
 elif choice == "🤖 AI Consultant":
     st.title("🤖 Virtual SPM Lead")
     if ai_ready:
-        query = st.text_input("Ask a question about SPM Best Practices:")
+        query = st.text_input("Ask about ServiceNow Best Practices:")
         if st.button("Generate Solution"):
-            with st.spinner("Analyzing..."):
-                res = model.generate_content(f"Act as a ServiceNow SPM expert. Use CSDM 4.0 standards. Query: {query}")
-                st.markdown("---")
-                st.markdown(res.text)
+            with st.spinner("Thinking..."):
+                response = model.generate_content(f"Act as a ServiceNow SPM expert. Use CSDM 4.0. Query: {query}")
+                st.markdown(response.text)
     else:
-        st.error("API Key Required.")
+        st.error("Please provide an API Key to enable the Consultant.")
 
-# --- MODULE 4: ONBOARDING ---
-elif choice == "Onboarding Hub":
-    st.title("🎓 Training Hub")
-    st.info("**Scenario:** A client wants to track costs in Excel instead of ServiceNow SPM.")
-    ans = st.text_area("Your advice as a consultant:")
-    if st.button("Grade Me"):
+# --- MODULE 3: CSDM 4.0 AUDITOR ---
+elif choice == "📋 CSDM 4.0 Auditor":
+    st.title("📋 CSDM 4.0 Best Practice Auditor")
+    mapping = st.text_area("Describe your CMDB/SPM table mapping:")
+    if st.button("Run Audit"):
         if ai_ready:
-            with st.spinner("Grading..."):
-                res = model.generate_content(f"Grade this consultant's answer based on ServiceNow SPM best practices: {ans}")
-                st.success("Expert Feedback:")
-                st.write(res.text)
+            with st.spinner("Auditing..."):
+                audit_prompt = f"Audit this for CSDM 4.0 alignment. Identify Red Flags: {mapping}"
+                response = model.generate_content(audit_prompt)
+                st.info("### Audit Results")
+                st.markdown(response.text)
+        else:
+            st.error("AI not ready. Check API Key.")
 
-# --- MODULE 5: DATA EXPLORER ---
-elif choice == "Data Explorer":
+# --- MODULE 4: DATA EXPLORER ---
+elif choice == "📂 Data Explorer":
     st.title("📂 Sample Portfolio Data")
     if os.path.exists("spm_sample_data.csv"):
         df = pd.read_csv("spm_sample_data.csv")
         st.dataframe(df, use_container_width=True)
-        st.bar_chart(df["Portfolio"].value_counts())
     else:
-        st.warning("⚠️ Data file not found. Ensure 'spm_sample_data.csv' is in the root directory.")
+        st.warning("Sample data (spm_sample_data.csv) not found in directory.")
