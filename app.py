@@ -65,7 +65,8 @@ def create_pdf(content, title):
     pdf.cell(0, 20, sanitize(title), ln=True, align='C')
     pdf.set_y(50); pdf.set_text_color(0, 0, 0); pdf.set_font("Helvetica", size=10)
     pdf.multi_cell(0, 7, sanitize(content))
-    return pdf.output()
+    # Convert the bytearray output to standard bytes for Streamlit
+    return bytes(pdf.output())
 
 def create_excel(content, sheet_name):
     output = io.BytesIO()
