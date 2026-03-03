@@ -9,12 +9,11 @@ import os
 st.set_page_config(page_title="IC SURE HUB", page_icon="⚡", layout="wide")
 
 # --- 🔐 API & MODEL ORCHESTRATION ---
-# Logic to handle 2026 model discovery and prevent 404 errors
 secret_key = st.secrets.get("GEMINI_API_KEY")
 if secret_key:
     genai.configure(api_key=secret_key)
     try:
-        # Dynamic discovery of the best available Flash model for 2026
+        # Dynamic discovery of the best available model for 2026
         available_models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
         selected_model = next((m for m in available_models if 'gemini-3' in m or 'flash' in m), "gemini-1.5-flash")
         model = genai.GenerativeModel(selected_model)
@@ -35,14 +34,12 @@ if "plans" not in st.session_state:
 
 # --- 📄 PDF ENGINE (Unicode Safe) ---
 def create_pdf(content, title):
-    # Sanitize characters for standard PDF fonts
     replacements = {"’": "'", "‘": "'", "“": '"', "”": '"', "—": "-", "–": "-", "…": "..."}
     for k, v in replacements.items(): content = content.replace(k, v)
     
     pdf = FPDF()
     pdf.add_page()
-    # Header - IC SURE Branding
-    pdf.set_fill_color(0, 80, 158) 
+    pdf.set_fill_color(0, 80, 158) # IC SURE Blue
     pdf.rect(0, 0, 210, 40, 'F')
     pdf.set_font("Helvetica", 'B', 18); pdf.set_text_color(255, 255, 255)
     pdf.cell(0, 20, title, ln=True, align='C')
@@ -54,18 +51,15 @@ def create_pdf(content, title):
 st.title("⚡ IC SURE AI POWERED SERVICENOW TRANSFORMATION HUB")
 st.caption("Strategic Digital Command Center for Oil & Gas Enterprise Transformation")
 
-# --- SIDEBAR: EXECUTIVE STRATEGY ---
+# --- SIDEBAR ---
 with st.sidebar:
-    st.image("https://www.servicenow.com/content/dam/servicenow-assets/public/en-us/images/logos/servicenow-logo.png", width=150)
     st.header("🏢 Strategy Settings")
     maturity = st.select_slider("Org Maturity Level", ["Legacy", "Crawl", "Walk", "Run", "Fly"])
-    st.info(f"Targeting: OT/IT Convergence & Asset Integrity")
+    st.info("Relevance: Oil & Gas Assets & OT/IT Alignment")
     st.divider()
-    if ai_ready:
-        st.success(f"Brain Active: {selected_model}")
+    if ai_ready: st.success(f"Brain: {selected_model}")
 
-# --- SECTION 1: INDEPENDENT AGENT TABS ---
-st.subheader("🤖 Specialized Transformation Agents")
+# --- SECTION 1: AGENT TABS ---
 tabs = st.tabs([f"📡 {a} Expert" for a in agents])
 
 for i, agent in enumerate(agents):
@@ -74,19 +68,26 @@ for i, agent in enumerate(agents):
         
         with col_chat:
             st.write(f"### {agent} Strategic Workstream")
-            # Chat History
             for msg in st.session_state.history[agent]:
                 with st.chat_message(msg["role"]): st.markdown(msg["content"])
             
-            if user_input := st.chat_input(f"Consult {agent} Agent...", key=f"chat_{agent}"):
+            if user_input := st.chat_input(f"Consult {agent}...", key=f"chat_{agent}"):
                 st.session_state.history[agent].append({"role": "user", "content": user_input})
                 with st.chat_message("user"): st.markdown(user_input)
                 
                 with st.chat_message("assistant"):
-                    prompt = f"Act as a {agent} Consultant for Oil & Gas. Maturity: {maturity}. Include CSDM 4.0 context. Query: {user_input}"
+                    prompt = f"Agent: {agent} Specialist for Oil & Gas. Maturity: {maturity}. Query: {user_input}"
                     response = model.generate_content(prompt).text
                     st.markdown(response)
                     st.session_state.history[agent].append({"role": "assistant", "content": response})
 
         with col_tools:
-            st.button(f"🚩 Run Risk Audit", key=f"audit_{agent}", on_click=lambda
+            st.subheader("🚩 Risk Auditor")
+            if st.button(f"Run Risk Audit", key=f"audit_{agent}"):
+                with st.spinner("Analyzing..."):
+                    audit_res = model.generate_content(f"3 Oil & Gas Red Flags for {agent} at {maturity} maturity.").text
+                    st.error(audit_res)
+            
+            st.divider()
+            st.subheader("📋 Project Artifacts")
+            if st.button(f
