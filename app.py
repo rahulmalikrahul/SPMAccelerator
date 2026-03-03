@@ -14,6 +14,7 @@ if secret_key:
     genai.configure(api_key=secret_key)
     try:
         available_models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
+        # Robust model selection for 2026
         selected_model = next((m for m in available_models if 'gemini-3' in m or 'flash' in m), "gemini-1.5-flash")
         model = genai.GenerativeModel(selected_model)
         ai_ready = True
@@ -37,7 +38,7 @@ def create_pdf(content, title):
     for k, v in replacements.items(): content = content.replace(k, v)
     pdf = FPDF()
     pdf.add_page()
-    pdf.set_fill_color(0, 80, 158) 
+    pdf.set_fill_color(0, 80, 158) # IC SURE Corporate Blue
     pdf.rect(0, 0, 210, 40, 'F')
     pdf.set_font("Helvetica", 'B', 18); pdf.set_text_color(255, 255, 255)
     pdf.cell(0, 20, title, ln=True, align='C')
@@ -53,10 +54,10 @@ st.caption("Strategic Digital Command Center for Oil & Gas Enterprise Transforma
 with st.sidebar:
     st.header("🏢 Strategy Settings")
     maturity = st.select_slider("Org Maturity Level", ["Legacy", "Crawl", "Walk", "Run", "Fly"])
-    st.info("Industry Context: Oil & Gas Operations")
+    st.info("Industry Focus: Oil & Gas / OT-IT Convergence")
     if ai_ready: st.success(f"Brain: {selected_model}")
 
-# --- SECTION 1: AGENT TABS ---
+# --- SECTION 1: INDEPENDENT AGENT TABS ---
 tabs = st.tabs([f"📡 {a} Expert" for a in agents])
 
 for i, agent in enumerate(agents):
@@ -68,7 +69,6 @@ for i, agent in enumerate(agents):
             for msg in st.session_state.history[agent]:
                 with st.chat_message(msg["role"]): st.markdown(msg["content"])
             
-            # Using unique keys for each chat input to avoid conflicts
             if user_input := st.chat_input(f"Consult {agent}...", key=f"chat_input_{agent}"):
                 st.session_state.history[agent].append({"role": "user", "content": user_input})
                 with st.chat_message("user"): st.markdown(user_input)
@@ -89,8 +89,8 @@ for i, agent in enumerate(agents):
             st.divider()
             st.subheader("📋 Project Artifacts")
             if st.button(f"Generate {agent} Roadmap", key=f"gen_plan_{agent}"):
-                with st.spinner("Drafting..."):
-                    res = model.generate_content(f"4-phase Plan for {agent} in O&G. Include Roles: PMO, Architect, Change Mgmt.").text
+                with st.spinner("Drafting Roadmap..."):
+                    res = model.generate_content(f"Build 4-phase Plan for {agent} in Oil & Gas. Include PMO, Architect, and Change Mgmt roles.").text
                     st.session_state.plans[agent] = res
                     st.success("Plan Ready")
             
@@ -102,12 +102,12 @@ for i, agent in enumerate(agents):
 st.divider()
 st.header("⚙️ Role-Based Execution Engine")
 r_col, s_col, m_col = st.columns(3)
-with r_col: exec_role = st.selectbox("Your Role", ["Implementation Architect", "PMO Lead", "Change Management Lead", "Business Analyst"])
-with s_col: exec_stage = st.selectbox("Current Stage", ["Design (Requirements)", "Build (Config)", "Deploy (Validation)"])
-with m_col: exec_mod = st.selectbox("Module Under Implementation", agents)
+with r_col: exec_role = st.selectbox("Your Project Role", ["Implementation Architect", "PMO Lead", "Change Management Lead", "Business Analyst"])
+with s_col: exec_stage = st.selectbox("Project Stage", ["Design (Requirements)", "Build (Config)", "Deploy (Validation)"])
+with m_col: exec_mod = st.selectbox("Focus Module", agents)
 
 if st.button("🚀 Get My Action Plan", key="exec_btn"):
-    with st.spinner("Calculating..."):
+    with st.spinner("Calculating Step-by-Step Instructions..."):
         instr = model.generate_content(f"Role: {exec_role}, Stage: {exec_stage}, Module: {exec_mod}. Step-by-step O&G guide with examples.").text
         st.info(instr)
 
@@ -116,4 +116,25 @@ st.divider()
 st.header("🛠️ Technical Config & OOTB Mapping Engine")
 c1, c2 = st.columns([2,1])
 with c1: 
-    config_desc = st.
+    # FIXED: Properly closed text_area widget
+    config_desc = st.text_area("Describe Configuration (e.g. Asset Discovery for Offshore Drilling Rigs):", key="config_area", height=150)
+with c2:
+    st.write("### Review Tools")
+    do_map = st.button("📝 Generate Technical Mapping", key="map_btn")
+    do_rev = st.button("⚖️ OOTB Best Practice Review", key="rev_btn")
+
+if do_map and config_desc:
+    with st.spinner("Generating Mapping..."):
+        res = model.generate_content(f"Create technical mapping and update set logic for {config_desc} in {exec_mod}. Sector: Oil & Gas.").text
+        st.code(res, language="markdown")
+if do_rev and config_desc:
+    with st.spinner("Validating OOTB compliance..."):
+        res = model.generate_content(f"Review this {exec_mod} config for OOTB compliance: {config_desc}. Focus on avoiding custom tables.").text
+        st.warning(res)
+
+# --- FOOTER: ONBOARDING ---
+st.markdown("---")
+with st.expander("👤 New Hire Induction Hub"):
+    onboard_role = st.selectbox("Position:", ["PMO", "Change Manager", "Technical Lead"], key="onboard_select")
+    if st.button("Start 30-Day Induction", key="onboard_btn"):
+        st.write(model.generate_content(f"30-day induction plan for a {onboard_role} on an Oil & Gas ServiceNow project.").text)
