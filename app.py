@@ -3,256 +3,171 @@ import pandas as pd
 import google.generativeai as genai
 from fpdf import FPDF
 import io
-import xlsxwriter
 from datetime import datetime
 
-# --- 1. PAGE & UI THEME CONFIGURATION ---
-st.set_page_config(page_title="AI Powered ServiceNow Transformation", page_icon="🌐", layout="wide")
+# --- 🎨 UI THEME CONFIGURATION ---
+st.set_page_config(page_title="ServiceNow AI Transformation", page_icon="⚡", layout="wide")
 
-# AccelQ-Inspired "Dark Tech" CSS
+# Custom CSS for the Blue/Black/White Premium Look
 st.markdown("""
     <style>
-    /* Global Background & Base Text */
-    .stApp {
-        background: radial-gradient(circle at top right, #001a3d, #00041c);
-        color: #ffffff;
-        font-family: 'Segoe UI', Roboto, sans-serif;
+    .main { background-color: #ffffff; color: #1a1a1a; }
+    .stApp { background-color: #ffffff; }
+    h1, h2, h3 { color: #00509d !important; font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; }
+    .stButton>button { 
+        background-color: #00509d; color: white; border-radius: 5px; 
+        border: none; font-weight: bold; width: 100%;
     }
-    
-    /* Demo Watermark (Background Layer) */
-    .watermark {
-        position: fixed;
-        top: 50%;
-        left: 50%;
-        transform: translate(-50%, -50%) rotate(-45deg);
-        font-size: 10rem;
-        color: rgba(0, 245, 255, 0.04);
-        font-weight: 800;
-        z-index: 0;
-        pointer-events: none;
-        white-space: nowrap;
-    }
-
-    /* Primary Heading: Large, Bold, Uppercase */
-    .main-title {
-        color: #00f5ff !important;
-        font-size: 2.8rem !important;
-        font-weight: 800;
-        text-transform: uppercase;
-        letter-spacing: 3px;
-        margin-bottom: 5px;
-        line-height: 1.2;
-    }
-
-    /* Sub-Headings: Mixed Case & Smaller */
-    h2, h3, .section-header {
-        color: #00f5ff !important;
-        font-size: 1.5rem !important;
-        font-weight: 600 !important;
-        text-transform: none !important; /* Mixed Case */
-        margin-top: 25px;
-        letter-spacing: 0.5px;
-    }
-    
-    /* Tabs Optimization: Stretch to fill horizontal space */
-    .stTabs [data-baseweb="tab-list"] {
-        gap: 10px;
-        width: 100%;
-    }
+    .stButton>button:hover { background-color: #003d7a; border: none; color: white; }
+    .stExpander { border: 1px solid #00509d; border-radius: 5px; }
+    .stSidebar { background-color: #f8f9fa; border-right: 2px solid #00509d; }
+    .stTabs [data-baseweb="tab-list"] { gap: 10px; }
     .stTabs [data-baseweb="tab"] {
-        flex: 1; 
-        background-color: #001233 !important;
-        border: 1px solid #00f5ff33 !important;
-        color: #ffffff !important;
-        height: 60px;
-        font-weight: 600;
-        font-size: 1.1rem;
-        border-radius: 4px 4px 0 0;
+        background-color: #f0f2f6; border-radius: 5px 5px 0px 0px;
+        padding: 10px 20px; color: #1a1a1a;
     }
-    .stTabs [aria-selected="true"] {
-        background-color: #00f5ff !important;
-        color: #00041c !important;
-        border: 1px solid #00f5ff !important;
-    }
-
-    /* Sidebar Customization */
-    section[data-testid="stSidebar"] {
-        background-color: #000b2e !important;
-        border-right: 1px solid #00f5ff;
-    }
-
-    /* Standard Button: Glowing Cyan */
-    .stButton>button {
-        background-color: #00f5ff !important;
-        color: #00041c !important;
-        border-radius: 4px !important;
-        border: none !important;
-        font-weight: 700 !important;
-        width: 100%;
-        transition: 0.3s all ease;
-    }
-    .stButton>button:hover {
-        box-shadow: 0 0 20px rgba(0, 245, 255, 0.6);
-        transform: translateY(-2px);
-    }
+    .stTabs [aria-selected="true"] { background-color: #00509d !important; color: white !important; }
     </style>
-    
-    <div class="watermark">DEMO</div>
     """, unsafe_allow_html=True)
 
-# --- 2. LOGO & HEADER SECTION ---
-header_col1, header_col2 = st.columns([1, 5])
-with header_col1:
-    # Infosys Logo
-    st.image("https://www.infosys.com/content/dam/infosys-web/en/global-resource/media-resources/infosys-logo-jpeg.jpg", width=140)
-with header_col2:
-    st.markdown('<h1 class="main-title">AI Powered ServiceNow Transformation</h1>', unsafe_allow_html=True)
-    st.caption("Next-Gen Strategic Orchestrator for Enterprise Excellence")
-
-# --- 3. HELPER FUNCTIONS (BINARY SAFE) ---
-def get_pdf_bytes(content, title):
-    # Fix for Latin-1 encoding issues often found in AI responses
-    safe_text = content.encode('latin-1', 'replace').decode('latin-1').replace('?', "'")
-    pdf = FPDF()
-    pdf.add_page()
-    pdf.set_fill_color(0, 4, 28)
-    pdf.rect(0, 0, 210, 40, 'F')
-    pdf.set_font("Helvetica", 'B', 18); pdf.set_text_color(0, 245, 255)
-    pdf.cell(0, 20, title, ln=True, align='C')
-    pdf.set_y(50); pdf.set_text_color(0, 0, 0); pdf.set_font("Helvetica", size=10)
-    pdf.multi_cell(0, 7, safe_text)
-    # Cast bytearray to bytes to resolve StreamlitAPIException
-    return bytes(pdf.output())
-
-def get_excel_bytes(content, sheet_name="Technical Mapping"):
-    output = io.BytesIO()
-    workbook = xlsxwriter.Workbook(output)
-    worksheet = workbook.add_worksheet()
-    wrap_format = workbook.add_format({'text_wrap': True, 'valign': 'top'})
-    worksheet.write('A1', f'AI Generated {sheet_name}', workbook.add_format({'bold': True, 'font_color': '#00509d'}))
-    worksheet.write('A2', content, wrap_format)
-    worksheet.set_column('A:A', 100)
-    workbook.close()
-    return output.getvalue()
-
-# --- 4. API & AI INITIALIZATION ---
+# --- 🔐 API & MODEL SETUP ---
 secret_key = st.secrets.get("GEMINI_API_KEY")
 if secret_key:
     genai.configure(api_key=secret_key)
     try:
-        model = genai.GenerativeModel('gemini-1.5-flash')
+        available_models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
+        selected_model = next((m for m in available_models if 'flash' in m), "gemini-1.5-flash")
+        model = genai.GenerativeModel(selected_model)
         ai_ready = True
-    except: ai_ready = False
+    except:
+        ai_ready = False
 else:
     st.sidebar.error("🔑 API Key Missing")
     ai_ready = False
 
-# --- 5. SESSION STATE ---
+# --- 🧠 SESSION STATE ---
 modules = ["SPM", "CSDM", "CMDB", "SAMPro", "ITSM"]
 if "history" not in st.session_state:
     st.session_state.history = {m: [] for m in modules}
-if "tech_map_result" not in st.session_state:
-    st.session_state.tech_map_result = ""
+if "plans" not in st.session_state:
+    st.session_state.plans = {m: "" for m in modules}
 
-# --- 6. SIDEBAR CONTROLS ---
+# --- 🛠️ HELPER FUNCTIONS ---
+def sanitize(text):
+    return text.encode('latin-1', 'replace').decode('latin-1').replace('?', "'")
+
+def create_pdf(content, title):
+    pdf = FPDF()
+    pdf.add_page()
+    pdf.set_fill_color(0, 80, 157) # ServiceNow Blue
+    pdf.rect(0, 0, 210, 40, 'F')
+    pdf.set_font("Helvetica", 'B', 20); pdf.set_text_color(255, 255, 255)
+    pdf.cell(0, 20, sanitize(title), ln=True, align='C')
+    pdf.set_y(50); pdf.set_text_color(0, 0, 0); pdf.set_font("Helvetica", size=10)
+    pdf.multi_cell(0, 7, sanitize(content))
+    return pdf.output()
+
+def create_excel(content, sheet_name):
+    output = io.BytesIO()
+    writer = pd.ExcelWriter(output, engine='xlsxwriter')
+    lines = content.split('\n')
+    df = pd.DataFrame(lines, columns=[f"{sheet_name} Technical Details"])
+    df.to_excel(writer, index=False, sheet_name=sheet_name)
+    writer.close()
+    return output.getvalue()
+
+# --- 🏗️ SIDEBAR NAVIGATION ---
 with st.sidebar:
-    st.markdown("### 🛡️ Strategic Control")
-    industry = st.selectbox("Industry Focus", 
-                          ["Oil & Gas / OT-IT Convergence", "Mining", "Oil Field Services", "Utilities", "Manufacturing", "Healthcare"])
+    st.title("🛡️ Global Settings")
+    industry = st.selectbox("Industry Focus", ["Oil & Gas / OT-IT Convergence", "Mining", "Oil Field Services", "Utilities", "Manufacturing", "Public Sector"])
     maturity = st.select_slider("Maturity Level", ["Legacy", "Crawl", "Walk", "Run", "Fly"])
     st.divider()
-    st.info(f"Targeting: {industry}\nStrategy: {maturity} Phase")
+    st.write(f"**Industry:** {industry}")
+    st.write(f"**Maturity:** {maturity}")
 
-# --- 7. MODULE AGENT TABS (FULL REAL ESTATE) ---
-tabs = st.tabs([f"💠 {m}" for m in modules])
+# --- 🚀 HEADER ---
+st.title("⚡ AI POWERED SERVICENOW TRANSFORMATION")
+st.markdown(f"**Strategic Intelligent Orchestrator for {industry}**")
+
+# --- SECTION 1: MODULE AGENTS ---
+tabs = st.tabs([f"🔹 {m}" for m in modules])
 
 for i, m_name in enumerate(modules):
     with tabs[i]:
         col_chat, col_tools = st.columns([2, 1])
         
         with col_chat:
-            st.markdown(f"### {m_name} Cognitive Specialist")
+            st.subheader(f"{m_name} Cognitive Agent")
             for msg in st.session_state.history[m_name]:
                 with st.chat_message(msg["role"]): st.markdown(msg["content"])
             
-            if user_input := st.chat_input(f"Consult {m_name} for {industry}...", key=f"chat_input_{m_name}"):
+            if user_input := st.chat_input(f"Consult {m_name} Specialist...", key=f"chat_{m_name}"):
                 st.session_state.history[m_name].append({"role": "user", "content": user_input})
                 with st.chat_message("user"): st.markdown(user_input)
                 
-                if ai_ready:
-                    ai_prompt = f"Expert: {m_name} | Industry: {industry} | Maturity: {maturity}. Context: Implementation Best Practices. Query: {user_input}"
-                    response = model.generate_content(ai_prompt).text
+                with st.chat_message("assistant"):
+                    prompt = f"Agent: {m_name} Expert for {industry}. Maturity: {maturity}. Context: Implementation, Governance, Technical Debt. User Query: {user_input}"
+                    response = model.generate_content(prompt).text
+                    st.markdown(response)
                     st.session_state.history[m_name].append({"role": "assistant", "content": response})
-                    with st.chat_message("assistant"): st.markdown(response)
 
         with col_tools:
-            st.markdown("### Risk Audit")
-            if st.button(f"Scan {m_name} Hazards", key=f"risk_{m_name}"):
-                with st.spinner("Analyzing Risks..."):
-                    risk_res = model.generate_content(f"Identify 3 major risks for {m_name} implementation in {industry}.").text
-                    st.error(risk_res)
+            st.subheader("🚩 Project Auditor")
+            if st.button(f"Scan {m_name} Risks", key=f"audit_{m_name}"):
+                res = model.generate_content(f"3 industry-specific red flags for {m_name} in {industry} at {maturity} maturity.").text
+                st.error(res)
             
             st.divider()
-            st.markdown("### Artifact Generation")
-            if st.button(f"Draft {m_name} Roadmap", key=f"btn_plan_{m_name}"):
-                with st.spinner("Building Roadmap..."):
-                    roadmap = model.generate_content(f"Create a 4-phase transformation roadmap for {m_name} in {industry}.").text
-                    st.session_state[f"roadmap_{m_name}"] = roadmap
-                    st.success("Roadmap Ready")
+            st.subheader("📋 Artifacts")
+            if st.button(f"Build {m_name} Roadmap", key=f"plan_{m_name}"):
+                res = model.generate_content(f"Create 4-phase Roadmap for {m_name} in {industry}. Roles: Architect, PMO, Change Mgmt.").text
+                st.session_state.plans[m_name] = res
+                st.success("Roadmap Ready")
             
-            if f"roadmap_{m_name}" in st.session_state:
-                st.download_button("📥 Roadmap (PDF)", 
-                                   data=get_pdf_bytes(st.session_state[f"roadmap_{m_name}"], f"{m_name} Roadmap"),
-                                   file_name=f"{m_name}_Roadmap.pdf", key=f"dl_pdf_{m_name}")
+            if st.session_state.plans[m_name]:
+                st.download_button("📥 Download One-Pager (PDF)", create_pdf(st.session_state.plans[m_name][:1500], f"{m_name} Strategy"), f"{m_name}_OnePager.pdf", key=f"dl_p_{m_name}")
 
-# --- 8. ROLE-BASED EXECUTION ENGINE ---
+# --- SECTION 2: ROLE-BASED EXECUTION ---
 st.divider()
-st.header("Role-Based Execution Engine")
-r1, r2, r3 = st.columns(3)
-with r1: e_role = st.selectbox("Your Professional Role", ["Implementation Architect", "Process Architect", "Technical Lead", "PMO Lead", "Change Management Lead", "Business Analyst"])
-with r2: e_stage = st.selectbox("Project Phase", ["Design (Requirements)", "Build (Config)", "Deploy (Validation)"])
-with r3: e_mod = st.selectbox("Focus Module", modules, key="exec_ctx")
+st.header("⚙️ Role-Based Execution Engine")
+r_col, s_col, m_col = st.columns(3)
+with r_col: exec_role = st.selectbox("Your Role", ["Implementation Architect", "Process Architect", "PMO Lead", "Change Management Lead", "Business Analyst", "Technical Lead"])
+with s_col: exec_stage = st.selectbox("Current Phase", ["Design (Requirements)", "Build (Config)", "Deploy (Validation)"])
+with m_col: exec_mod = st.selectbox("Module Selection", modules)
 
-if st.button("🚀 Generate Phase Action Plan", key="exec_btn"):
-    with st.spinner("Calculating Actions..."):
-        res = model.generate_content(f"Action plan for a {e_role} during the {e_stage} phase of {e_mod} in {industry}.").text
-        st.info(res)
+if st.button("🚀 Generate Action Plan", key="exec_btn"):
+    res = model.generate_content(f"Provide detailed step-by-step guidance for {exec_role} in the {exec_stage} phase of {exec_mod} for {industry}.").text
+    st.info(res)
 
-# --- 9. TECHNICAL MAPPING GENERATOR (EXCEL/PDF) ---
+# --- SECTION 3: TECHNICAL MAPPING ---
 st.divider()
-st.header("Technical Mapping Generator")
-mapping_input = st.text_area("Requirements (e.g. Map Offshore Rig OT sensors to ServiceNow Technical Services):", height=100)
+st.header("🛠️ Technical Mapping Generator")
+mapping_input = st.text_area("Describe the Technical Requirements (e.g., 'Map Mining Haul Truck sensors to CMDB'):", height=100)
 if st.button("📝 Generate Technical Mapping", key="map_btn"):
-    with st.spinner("Mapping Data Structures..."):
-        st.session_state.tech_map_result = model.generate_content(f"Provide a technical mapping sheet for: {mapping_input} in {e_mod} for {industry}.").text
-        st.code(st.session_state.tech_map_result, language="markdown")
+    with st.spinner("Generating..."):
+        map_res = model.generate_content(f"Create technical mapping sheet and update set naming for: {mapping_input} in {exec_mod} for {industry}.").text
+        st.session_state.mapping_data = map_res
+        st.code(map_res, language="markdown")
 
-if st.session_state.tech_map_result:
-    d_col1, d_col2 = st.columns(2)
-    with d_col1:
-        st.download_button("📥 Mapping (PDF)", 
-                           data=get_pdf_bytes(st.session_state.tech_map_result, "Technical Mapping"), 
-                           file_name="Technical_Mapping.pdf")
-    with d_col2:
-        st.download_button("📥 Mapping (Excel)", 
-                           data=get_excel_bytes(st.session_state.tech_map_result), 
-                           file_name="Technical_Mapping.xlsx")
+if "mapping_data" in st.session_state:
+    c1, c2 = st.columns(2)
+    with c1:
+        st.download_button("📥 Download Mapping (PDF)", create_pdf(st.session_state.mapping_data, "Technical Mapping"), "Mapping.pdf")
+    with c2:
+        st.download_button("📥 Download Mapping (Excel)", create_excel(st.session_state.mapping_data, "Mapping"), "Mapping.xlsx")
 
-# --- 10. OOTB BEST PRACTICE REVIEW ---
+# --- SECTION 4: OOTB BEST PRACTICE REVIEW ---
 st.divider()
-st.header("OOTB Best Practice Review")
-c_input = st.text_area("Paste Configuration Plan or Customization Proposal:", height=100, key="ootb_area")
-if st.button("🔍 Run OOTB Compliance Audit", key="ootb_btn"):
-    with st.spinner("Reviewing against OOTB standards..."):
-        res = model.generate_content(f"Audit this {e_mod} proposal for {industry} against OOTB best practices: {c_input}").text
-        st.warning(res)
+st.header("⚖️ OOTB Best Practice Review")
+review_input = st.text_area("Paste Configuration Plan for OOTB Audit:", height=100, key="ootb_input")
+if st.button("🔍 Run OOTB Review", key="rev_btn"):
+    res = model.generate_content(f"Review this {exec_mod} config for OOTB compliance in {industry}: {review_input}. Identify customization traps.").text
+    st.warning(res)
 
-# --- 11. NEW HIRE INDUCTION HUB ---
+# --- SECTION 5: NEW HIRE INDUCTION ---
 st.divider()
-st.header("New Hire Induction Hub")
-h_role = st.selectbox("Onboarding Profile", 
-                    ["PMO", "Change Manager", "Technical Lead", "Implementation Architect", "Process Architect", "Business Analyst", "Business User"])
-if st.button("🏁 Launch 30-Day Induction Plan", key="onboard_btn"):
-    with st.spinner("Onboarding..."):
-        res = model.generate_content(f"Create a 30-day induction plan for a {h_role} joining a {e_mod} project in the {industry} sector.").text
-        st.markdown(res)
+st.header("👤 New Hire Induction Hub")
+on_role = st.selectbox("Onboarding Role", ["PMO", "Change Manager", "Technical Lead", "Implementation Architect", "Process Architect", "Business Analyst", "Business User"])
+if st.button("🏁 Start 30-Day Induction"):
+    res = model.generate_content(f"Create a 30-day induction plan for a {on_role} on a {exec_mod} project in the {industry} sector.").text
+    st.markdown(res)
