@@ -6,108 +6,117 @@ from datetime import datetime
 import os
 
 # --- PAGE CONFIG ---
-st.set_page_config(page_title="SNOW Agentic Pilot", page_icon="🤖", layout="wide")
+st.set_page_config(page_title="EnergyOps Agentic Pilot", page_icon="🛢️", layout="wide")
 
-# --- 🔐 API & MODEL SETUP ---
+# --- 🔐 API SETUP ---
 secret_key = st.secrets.get("GEMINI_API_KEY")
 if secret_key:
     genai.configure(api_key=secret_key)
-    # Using 'gemini-flash-latest' for 2026 stability
     model = genai.GenerativeModel('gemini-flash-latest')
     ai_ready = True
 else:
-    st.error("Missing GEMINI_API_KEY in Streamlit Secrets!")
+    st.error("Missing GEMINI_API_KEY in Secrets!")
     ai_ready = False
 
-# --- 🧠 PERSISTENT STATE ---
-if "messages" not in st.session_state:
-    st.session_state.messages = []
-if "maturity" not in st.session_state:
-    st.session_state.maturity = "Crawl"
-if "active_agent" not in st.session_state:
-    st.session_state.active_agent = "Orchestrator"
+# --- 🧠 SESSION STATE INITIALIZATION ---
+agents = ["SPM", "CSDM", "CMDB", "SAMPro"]
+if "history" not in st.session_state:
+    st.session_state.history = {a: [] for a in agents}
+if "plans" not in st.session_state:
+    st.session_state.plans = {a: "" for a in agents}
 
-# --- 📄 COMPREHENSIVE ROADMAP GENERATOR ---
-def generate_master_pdf(content, module_name):
+# --- 📄 PDF GENERATOR ---
+def create_pdf(content, title):
+    # Sanitize content for Latin-1
+    replacements = {"’": "'", "‘": "'", "“": '"', "”": '"', "—": "-", "–": "-"}
+    for k, v in replacements.items(): content = content.replace(k, v)
+    
     pdf = FPDF()
     pdf.add_page()
-    pdf.set_fill_color(30, 41, 59) # Deep Slate
+    pdf.set_fill_color(0, 50, 100) # Oil & Gas Deep Blue
     pdf.rect(0, 0, 210, 40, 'F')
-    pdf.set_font("helvetica", 'B', 22)
-    pdf.set_text_color(255, 255, 255)
-    pdf.cell(0, 20, f"{module_name} Implementation Strategy", ln=True, align='C')
-    pdf.set_font("helvetica", size=10)
-    pdf.cell(0, 10, f"Generated: {datetime.now().strftime('%Y-%m-%d')} | Confidentially Prepared", ln=True, align='C')
-    
-    pdf.set_y(50)
-    pdf.set_text_color(0, 0, 0)
-    pdf.set_font("helvetica", size=11)
-    pdf.multi_cell(0, 8, content)
+    pdf.set_font("Helvetica", 'B', 18); pdf.set_text_color(255, 255, 255)
+    pdf.cell(0, 20, title, ln=True, align='C')
+    pdf.set_y(50); pdf.set_text_color(0, 0, 0); pdf.set_font("Helvetica", size=10)
+    pdf.multi_cell(0, 7, content)
     return pdf.output()
 
-# --- 🎨 UI & SIDEBAR ---
-with st.sidebar:
-    st.title("🛡️ Implementation Control")
-    st.session_state.maturity = st.select_slider("Implementation Maturity", options=["Legacy", "Crawl", "Walk", "Run", "Fly"])
+# --- 🛠️ AGENT LOGIC ---
+def run_agent_workflow(agent_name, user_input, maturity):
+    role_map = {
+        "SPM": "Expert in Capital Project Management and Demand for Energy.",
+        "CSDM": "Enterprise Architect specializing in OT/IT convergence (CSDM 4.0).",
+        "CMDB": "Data Quality Lead for complex Industrial CMDB (OT & IT).",
+        "SAMPro": "Licensing Specialist for high-cost Engineering & Seismic software."
+    }
     
-    st.divider()
-    st.subheader("Select Specialized Agent")
-    agent_choice = st.radio("Active Expert:", ["Orchestrator", "SPM Specialist", "CSDM Architect", "CMDB Auditor", "SAMPro Consultant"])
-    st.session_state.active_agent = agent_choice
+    prompt = f"""
+    Agent: {agent_name} Specialist ({role_map[agent_name]})
+    Context: Oil & Gas Sector.
+    Current Maturity: {maturity}.
+    Phases: Discovery, Design/Build, Validation, Production.
+    
+    User Query: {user_input}
+    
+    Instruction: Provide a response that guides them through the current phase, 
+    identifying red flags specific to Oil & Gas (e.g. safety regs, remote asset discovery).
+    """
+    return model.generate_content(prompt).text
 
-    st.divider()
-    if st.button("🏁 Generate 4-Phase Roadmap"):
-        with st.spinner("Generating Detailed Project Plan..."):
-            prompt = f"""Generate a detailed 4-phase implementation plan for {agent_choice}. 
-            Phases: 1. Discovery, 2. Design/Build, 3. Validation/Change, 4. Production/Hypercare.
-            Include: Team Structure, Roles (Architect, Owner, Lead), and Governance Model."""
-            res = model.generate_content(prompt)
-            st.session_state.roadmap_preview = res.text
-            st.success("Plan Generated!")
+# --- 🎨 UI LAYOUT ---
+st.title("🛢️ EnergyOps Strategic Command Center")
+st.caption("2026 Enterprise ServiceNow Pilot for Oil & Gas")
 
-# --- 🤖 MAIN INTERFACE ---
-st.title(f"🚀 {st.session_state.active_agent} Dashboard")
+maturity = st.sidebar.select_slider("Select Organization Maturity", ["Legacy", "Crawl", "Walk", "Run", "Fly"])
 
-# Agent-Specific Context Injection
-agent_prompts = {
-    "Orchestrator": "You are the Lead Project Orchestrator. Guide the user across all modules.",
-    "SPM Specialist": "You are a ServiceNow SPM Expert. Focus on Strategic Planning and Value.",
-    "CSDM Architect": "You are a CSDM 4.0 specialist. Focus on data modeling and domain mapping.",
-    "CMDB Auditor": "You are a CMDB Quality Lead. Focus on data integrity and health.",
-    "SAMPro Consultant": "You are a Software Asset Management Lead. Focus on license optimization."
-}
+# TABS FOR INDEPENDENT AGENTS
+tabs = st.tabs([f"🛡️ {a} Agent" for a in agents])
 
-# Chat Display
-chat_container = st.container(height=450)
-with chat_container:
-    for msg in st.session_state.messages:
-        with st.chat_message(msg["role"]):
-            st.markdown(msg["content"])
-
-if prompt := st.chat_input(f"Consult with the {st.session_state.active_agent}..."):
-    st.session_state.messages.append({"role": "user", "content": prompt})
-    with chat_container:
-        with st.chat_message("user"): st.markdown(prompt)
+for i, agent in enumerate(agents):
+    with tabs[i]:
+        col_chat, col_audit = st.columns([2, 1])
         
-        if ai_ready:
-            with st.chat_message("assistant"):
-                system_instr = f"{agent_prompts[st.session_state.active_agent]} | Current Maturity: {st.session_state.maturity}. Be conversational."
-                response = model.generate_content(f"{system_instr}\nUser: {prompt}")
-                st.markdown(response.text)
-                st.session_state.messages.append({"role": "assistant", "content": response.text})
+        with col_chat:
+            st.subheader(f"{agent} Implementation Pilot")
+            # Chat History
+            for msg in st.session_state.history[agent]:
+                with st.chat_message(msg["role"]): st.markdown(msg["content"])
+            
+            if user_input := st.chat_input(f"Consult {agent} Expert...", key=f"input_{agent}"):
+                st.session_state.history[agent].append({"role": "user", "content": user_input})
+                with st.chat_message("user"): st.markdown(user_input)
+                
+                with st.chat_message("assistant"):
+                    response = run_agent_workflow(agent, user_input, maturity)
+                    st.markdown(response)
+                    st.session_state.history[agent].append({"role": "assistant", "content": response})
 
-# --- 📦 ONBOARDING & ROADMAP SECTION ---
-col1, col2 = st.columns(2)
-with col1:
-    with st.expander("👤 New Employee Onboarding Hub"):
-        st.write(f"Welcome to the {st.session_state.active_agent} team!")
-        if st.button("Get My First 30 Days"):
-            res = model.generate_content(f"Create a 30-day onboarding plan for a new consultant joining a {st.session_state.active_agent} project.")
-            st.markdown(res.text)
+        with col_audit:
+            st.subheader("🚩 Auditor Red Flags")
+            if st.button(f"Audit {agent} Strategy", key=f"audit_btn_{agent}"):
+                with st.spinner("Analyzing Risks..."):
+                    audit_res = model.generate_content(f"Perform a risk audit for an Oil & Gas {agent} project at {maturity} maturity. Identify 3 specific red flags.").text
+                    st.error(audit_res)
 
-with col2:
-    if "roadmap_preview" in st.session_state:
-        with st.expander("📄 Strategic Roadmap Preview"):
-            st.markdown(st.session_state.roadmap_preview)
-            pdf_bytes = generate_master_pdf(st.session_state.roadmap_preview, st.session_state.active_agent)
-            st.download_button("📥 Download Final Implementation Plan", data=pdf_bytes, file_name="Roadmap.pdf")
+            st.divider()
+            if st.button(f"📅 Build {agent} Project Plan", key=f"plan_{agent}"):
+                with st.spinner("Drafting Phased Roadmap..."):
+                    plan_prompt = f"Generate a 4-phase project plan for {agent} in Oil & Gas. Include Team Structure (Architect, Lead, BA), Operating Model, and Roles & Responsibilities."
+                    st.session_state.plans[agent] = model.generate_content(plan_prompt).text
+                    st.success("Plan Generated!")
+
+            if st.session_state.plans[agent]:
+                st.download_button("📥 One-Page Strategy (PDF)", 
+                                   create_pdf(st.session_state.plans[agent][:1500], f"{agent} Executive Summary"), 
+                                   f"{agent}_OnePager.pdf")
+                st.download_button("📥 Full Project Plan (PDF)", 
+                                   create_pdf(st.session_state.plans[agent], f"{agent} Detailed Roadmap"), 
+                                   f"{agent}_DetailedPlan.pdf")
+
+# --- 👤 ONBOARDING POP-UP SIMULATION ---
+with st.expander("👋 Consultant Onboarding Hub", expanded=False):
+    st.write("New to the EnergyOps project? Get your induction plan here.")
+    role = st.selectbox("Your Role", ["Implementation Lead", "Process Architect", "Business Analyst"])
+    if st.button("Generate Onboarding Guide"):
+        onboard_res = model.generate_content(f"Create a 30-day onboarding plan for a {role} on an Oil & Gas ServiceNow project.").text
+        st.info(onboard_res)
