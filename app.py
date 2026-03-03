@@ -2,193 +2,121 @@ import streamlit as st
 import pandas as pd
 import google.generativeai as genai
 from fpdf import FPDF
-import io
-import xlsxwriter
 from datetime import datetime
+import os
 
-# --- 🎨 ACCELQ DARK TECH THEME ---
-st.set_page_config(page_title="AI Powered ServiceNow Transformation", page_icon="🌐", layout="wide")
-
-# Custom CSS for UI Real Estate, Watermark, and Branding
-st.markdown("""
-    <style>
-    /* Background & Global Font */
-    .stApp {
-        background: radial-gradient(circle at top right, #001a3d, #00041c);
-        color: #ffffff;
-    }
-    
-    /* Demo Watermark */
-    .watermark {
-        position: fixed;
-        top: 10px;
-        right: 20px;
-        opacity: 0.2;
-        font-size: 3.5rem;
-        color: #ffffff;
-        font-weight: 800;
-        z-index: 1000;
-        pointer-events: none;
-        letter-spacing: 5px;
-    }
-
-    /* Main Title (Maintained as Uppercase/Large) */
-    .main-title {
-        color: #00f5ff !important;
-        font-size: 2.8rem !important;
-        font-weight: 800;
-        text-transform: uppercase;
-        letter-spacing: 2px;
-        margin-bottom: 0px;
-    }
-
-    /* Sub-Headings (Mixed Case & Smaller) */
-    h2, h3, .section-header {
-        color: #00f5ff !important;
-        font-size: 1.4rem !important;
-        font-weight: 600 !important;
-        text-transform: none !important; /* Mixed Case */
-        margin-top: 20px;
-    }
-    
-    /* Tab Expansion - Cover Real Estate */
-    .stTabs [data-baseweb="tab-list"] {
-        gap: 8px;
-        width: 100%;
-    }
-    .stTabs [data-baseweb="tab"] {
-        flex: 1; /* Stretch tabs across the width */
-        background-color: #001233 !important;
-        border: 1px solid #00f5ff33 !important;
-        color: #ffffff !important;
-        height: 55px;
-        font-weight: 600;
-    }
-    .stTabs [aria-selected="true"] {
-        background-color: #00f5ff !important;
-        color: #00041c !important;
-        border: 1px solid #00f5ff !important;
-    }
-
-    /* Sidebar Accents */
-    section[data-testid="stSidebar"] {
-        background-color: #000b2e !important;
-        border-right: 1px solid #00f5ff;
-    }
-
-    /* Glowing Buttons */
-    .stButton>button {
-        background-color: #00f5ff !important;
-        color: #00041c !important;
-        border-radius: 4px;
-        font-weight: 700;
-        border: none;
-    }
-    </style>
-    
-    <div class="watermark">DEMO</div>
-    """, unsafe_allow_html=True)
-
-# --- 🏢 LOGO & HEADER ---
-logo_col, title_col = st.columns([1, 4])
-with logo_col:
-    # Official Infosys Logo
-    st.image("https://www.infosys.com/content/dam/infosys-web/en/global-resource/media-resources/infosys-logo-jpeg.jpg", width=140)
-with title_col:
-    st.markdown('<h1 class="main-title">AI Powered ServiceNow Transformation</h1>', unsafe_allow_html=True)
+# --- PAGE CONFIG ---
+st.set_page_config(page_title="EnergyOps Agentic Pilot", page_icon="🛢️", layout="wide")
 
 # --- 🔐 API SETUP ---
 secret_key = st.secrets.get("GEMINI_API_KEY")
 if secret_key:
     genai.configure(api_key=secret_key)
-    model = genai.GenerativeModel('gemini-1.5-flash')
+    model = genai.GenerativeModel('gemini-flash-latest')
     ai_ready = True
 else:
-    st.sidebar.warning("API Key missing in secrets.")
+    st.error("Missing GEMINI_API_KEY in Secrets!")
     ai_ready = False
 
-# --- 🛠️ HELPER FUNCTIONS (BINARY FIX) ---
-def create_pdf_bytes(content, title):
+# --- 🧠 SESSION STATE INITIALIZATION ---
+agents = ["SPM", "CSDM", "CMDB", "SAMPro"]
+if "history" not in st.session_state:
+    st.session_state.history = {a: [] for a in agents}
+if "plans" not in st.session_state:
+    st.session_state.plans = {a: "" for a in agents}
+
+# --- 📄 PDF GENERATOR ---
+def create_pdf(content, title):
+    # Sanitize content for Latin-1
+    replacements = {"’": "'", "‘": "'", "“": '"', "”": '"', "—": "-", "–": "-"}
+    for k, v in replacements.items(): content = content.replace(k, v)
+    
     pdf = FPDF()
     pdf.add_page()
-    pdf.set_fill_color(0, 4, 28)
+    pdf.set_fill_color(0, 50, 100) # Oil & Gas Deep Blue
     pdf.rect(0, 0, 210, 40, 'F')
-    pdf.set_font("Helvetica", 'B', 18); pdf.set_text_color(0, 245, 255)
+    pdf.set_font("Helvetica", 'B', 18); pdf.set_text_color(255, 255, 255)
     pdf.cell(0, 20, title, ln=True, align='C')
     pdf.set_y(50); pdf.set_text_color(0, 0, 0); pdf.set_font("Helvetica", size=10)
-    # Sanitize content for PDF
-    safe_text = content.encode('latin-1', 'replace').decode('latin-1')
-    pdf.multi_cell(0, 7, safe_text)
-    # FIX: Explicitly cast bytearray to bytes
-    return bytes(pdf.output())
+    pdf.multi_cell(0, 7, content)
+    return pdf.output()
 
-def create_excel_bytes(content):
-    output = io.BytesIO()
-    workbook = xlsxwriter.Workbook(output)
-    worksheet = workbook.add_worksheet()
-    worksheet.write('A1', 'AI Generated Insight')
-    worksheet.write('A2', content)
-    workbook.close()
-    return output.getvalue()
+# --- 🛠️ AGENT LOGIC ---
+def run_agent_workflow(agent_name, user_input, maturity):
+    role_map = {
+        "SPM": "Expert in Capital Project Management and Demand for Energy.",
+        "CSDM": "Enterprise Architect specializing in OT/IT convergence (CSDM 4.0).",
+        "CMDB": "Data Quality Lead for complex Industrial CMDB (OT & IT).",
+        "SAMPro": "Licensing Specialist for high-cost Engineering & Seismic software."
+    }
+    
+    prompt = f"""
+    Agent: {agent_name} Specialist ({role_map[agent_name]})
+    Context: Oil & Gas Sector.
+    Current Maturity: {maturity}.
+    Phases: Discovery, Design/Build, Validation, Production.
+    
+    User Query: {user_input}
+    
+    Instruction: Provide a response that guides them through the current phase, 
+    identifying red flags specific to Oil & Gas (e.g. safety regs, remote asset discovery).
+    """
+    return model.generate_content(prompt).text
 
-# --- 🧠 SESSION STATE ---
-modules = ["SPM", "CSDM", "CMDB", "SAMPro", "ITSM"]
-if "history" not in st.session_state:
-    st.session_state.history = {m: [] for m in modules}
+# --- 🎨 UI LAYOUT ---
+st.title("🛢️ EnergyOps Strategic Command Center")
+st.caption("2026 Enterprise ServiceNow Pilot for Oil & Gas")
 
-# --- 🏗️ SIDEBAR ---
-with st.sidebar:
-    st.markdown("### Strategic Filters")
-    industry = st.selectbox("Industry", ["Oil & Gas", "Utilities", "Mining", "Manufacturing"])
-    maturity = st.select_slider("Phase", ["Legacy", "Crawl", "Walk", "Run", "Fly"])
+maturity = st.sidebar.select_slider("Select Organization Maturity", ["Legacy", "Crawl", "Walk", "Run", "Fly"])
 
-# --- 💠 MODULE WORKSTREAMS ---
-tabs = st.tabs([f"🔹 {m}" for m in modules])
+# TABS FOR INDEPENDENT AGENTS
+tabs = st.tabs([f"🛡️ {a} Agent" for a in agents])
 
-for i, m_name in enumerate(modules):
+for i, agent in enumerate(agents):
     with tabs[i]:
-        c1, c2 = st.columns([2, 1])
-        with c1:
-            st.markdown(f"### {m_name} Cognitive Agent")
-            for msg in st.session_state.history[m_name]:
+        col_chat, col_audit = st.columns([2, 1])
+        
+        with col_chat:
+            st.subheader(f"{agent} Implementation Pilot")
+            # Chat History
+            for msg in st.session_state.history[agent]:
                 with st.chat_message(msg["role"]): st.markdown(msg["content"])
             
-            if user_input := st.chat_input(f"Consult {m_name}...", key=f"chat_{m_name}"):
-                st.session_state.history[m_name].append({"role": "user", "content": user_input})
+            if user_input := st.chat_input(f"Consult {agent} Expert...", key=f"input_{agent}"):
+                st.session_state.history[agent].append({"role": "user", "content": user_input})
                 with st.chat_message("user"): st.markdown(user_input)
-                if ai_ready:
-                    res = model.generate_content(f"You are a {m_name} expert for {industry}. User asks: {user_input}").text
-                    st.session_state.history[m_name].append({"role": "assistant", "content": res})
-                    st.rerun()
+                
+                with st.chat_message("assistant"):
+                    response = run_agent_workflow(agent, user_input, maturity)
+                    st.markdown(response)
+                    st.session_state.history[agent].append({"role": "assistant", "content": response})
 
-        with c2:
-            st.markdown("### Management Tools")
-            if st.button(f"Draft {m_name} Roadmap", key=f"btn_{m_name}"):
-                plan = f"Roadmap for {m_name} in {industry}:\n1. Assessment\n2. Alignment\n3. Execution\n4. Optimization"
-                st.session_state[f"temp_plan_{m_name}"] = plan
-                st.success("Roadmap Generated")
-            
-            if f"temp_plan_{m_name}" in st.session_state:
-                st.download_button("📥 Download PDF", 
-                                   create_pdf_bytes(st.session_state[f"temp_plan_{m_name}"], f"{m_name} Roadmap"), 
-                                   f"{m_name}_Plan.pdf")
+        with col_audit:
+            st.subheader("🚩 Auditor Red Flags")
+            if st.button(f"Audit {agent} Strategy", key=f"audit_btn_{agent}"):
+                with st.spinner("Analyzing Risks..."):
+                    audit_res = model.generate_content(f"Perform a risk audit for an Oil & Gas {agent} project at {maturity} maturity. Identify 3 specific red flags.").text
+                    st.error(audit_res)
 
-# --- ⚙️ EXECUTION & MAPPING ---
-st.divider()
-st.header("Strategic Execution Engine")
-r1, r2, r3 = st.columns(3)
-with r1: role = st.selectbox("Role", ["Architect", "Process Lead", "Technical Lead", "Business Analyst", "PMO"])
-with r2: phase = st.selectbox("Current Phase", ["Design", "Build", "Deploy"])
-with r3: mod_exec = st.selectbox("Module Focus", modules, key="exec_mod")
+            st.divider()
+            if st.button(f"📅 Build {agent} Project Plan", key=f"plan_{agent}"):
+                with st.spinner("Drafting Phased Roadmap..."):
+                    plan_prompt = f"Generate a 4-phase project plan for {agent} in Oil & Gas. Include Team Structure (Architect, Lead, BA), Operating Model, and Roles & Responsibilities."
+                    st.session_state.plans[agent] = model.generate_content(plan_prompt).text
+                    st.success("Plan Generated!")
 
-if st.button("🚀 Generate Action Plan"):
-    res = model.generate_content(f"Create action plan for {role} during {phase} of {mod_exec} in {industry}.").text
-    st.info(res)
+            if st.session_state.plans[agent]:
+                st.download_button("📥 One-Page Strategy (PDF)", 
+                                   create_pdf(st.session_state.plans[agent][:1500], f"{agent} Executive Summary"), 
+                                   f"{agent}_OnePager.pdf")
+                st.download_button("📥 Full Project Plan (PDF)", 
+                                   create_pdf(st.session_state.plans[agent], f"{agent} Detailed Roadmap"), 
+                                   f"{agent}_DetailedPlan.pdf")
 
-st.divider()
-st.header("Technical Mapping Generator")
-mapping_input = st.text_area("Requirements for Mapping:")
-if st.button("Generate Mapping"):
-    map_res = f"Technical Mapping Logic for {mod_exec}:\nSource: {mapping_input}\nTarget: cmdb_ci_hardware"
-    st.code(map_res)
-    st.download_button("📥 Download Excel", create_excel_bytes(map_res), "Mapping.xlsx")
+# --- 👤 ONBOARDING POP-UP SIMULATION ---
+with st.expander("👋 Consultant Onboarding Hub", expanded=False):
+    st.write("New to the EnergyOps project? Get your induction plan here.")
+    role = st.selectbox("Your Role", ["Implementation Lead", "Process Architect", "Business Analyst"])
+    if st.button("Generate Onboarding Guide"):
+        onboard_res = model.generate_content(f"Create a 30-day onboarding plan for a {role} on an Oil & Gas ServiceNow project.").text
+        st.info(onboard_res)
